@@ -1,4 +1,5 @@
 import { HyperFormula, SimpleCellAddress } from 'hyperformula';
+import * as vscode from 'vscode';
 
 // table struct
 type TableCell = {
@@ -7,9 +8,24 @@ type TableCell = {
     content: string;
 };
 
+type TableStyle = {
+    backgroundColor?: string;
+    textColor?: string;
+};
+
+type TableStyleSelector = {
+    selector: string;  // Can be 'table', 'header', 'row-{n}', 'col-{n}', 'cell-{row}-{col}'
+    style: TableStyle;
+};
+
+type TableStyleConfig = {
+    styles: TableStyleSelector[];
+};
+
 type TableContent = {
     sheet: string;
     data: TableCell[][];
+    styles?: TableStyleConfig;
 };
 
 type FormulaReturn = {
@@ -29,7 +45,6 @@ export type MarkdownReturn = {
 
 // given the document, parse valid tables
 export function MarkdownFormula(document:string, precisionRounding:number, includeTableHeaderInCellNumaration:boolean):MarkdownReturn[] {
-
     // split document into lines
     let allLines: string[] = document.split(/\r?\n/gm)
 
@@ -49,6 +64,8 @@ export function MarkdownFormula(document:string, precisionRounding:number, inclu
     const options = {
         precisionRounding: precisionRounding,
         licenseKey: 'gpl-v3',
+        decimalSeparator: vscode.workspace.getConfiguration('markdown-formula').get('decimalSeparator', '.') as '.' | ',',
+        thousandSeparator: vscode.workspace.getConfiguration('markdown-formula').get('thousandSeparator', ',') as ',' | '.' | ' ' | ''
     };
 
     // build an instance with defined options
@@ -84,6 +101,7 @@ export function MarkdownFormula(document:string, precisionRounding:number, inclu
         {
             const val = hfInstance.getCellValue(allFormulaData[k].address[i]);
             let result = '[' + val + ']' + '(#' + allFormulaData[k].formulas[i] + ')';
+
             // push the result into output vector
             output.push({data:result, locations: allFormulaData[k].locations[i]});
         }
@@ -121,8 +139,11 @@ function GetFormulaData(table:TableContent, sheetID:number):FormulaReturn {
                 content = '=' + match[1];
             }
 
+            // Apply cell styling
+            content = applyCellStyles(content.trim(), table, r, c);
+
             // set the content
-            rowRdata.push(content.trim());
+            rowRdata.push(content);
         }
         output.data.push(rowRdata);
     }
@@ -162,7 +183,7 @@ function FindConsecutiveBlocks(array:number[]) {
 
 // create array of table cells that contains the all the data in the row
 function GetTableColumns(allContent:string[], lineNumber:number) {
-    
+
     let column:TableCell[] = [];
 
     // get the cells
@@ -179,11 +200,30 @@ function GetTableColumns(allContent:string[], lineNumber:number) {
     return column;
 }
 
-// get the table content
+// Modify the GetTableContent function to include styling
 function GetTableContent(allLines:string[], dataLines:number[], sheetID:number, includeTableHeaderInCellNumaration:boolean)
 {
     // create a table
     let table: TableContent = {sheet:'Sheet' + sheetID, data:[]};
+
+    // Check for styles comment before the table
+    if(dataLines[0] > 0) {
+        // Look for styles in the lines before the table
+        for(let i = dataLines[0] - 1; i >= Math.max(0, dataLines[0] - 3); i--) {
+            const styles = parseTableStyles(allLines[i]);
+            if (styles) {
+                table.styles = styles;
+                break;
+            }
+        }
+
+        // Check for sheet name
+        let sheetNamePattern = /<!--\s*sheet:\s*([^>]*)\s*-->/;
+        let match = allLines[dataLines[0]-1].match(sheetNamePattern);
+        if(match != null) {
+            table.sheet = match[1];
+        }
+    }
 
     // push the table header to the data array
     if(includeTableHeaderInCellNumaration) {
@@ -196,26 +236,13 @@ function GetTableContent(allLines:string[], dataLines:number[], sheetID:number, 
         table.data.push(GetTableColumns(allLines, dataLines[i]));
     }
 
-    // find the sheet name if exist
-    if(dataLines[0] > 0)
-    {
-        // get the line just before the header
-        let possibleSheetName = allLines[dataLines[0]-1];
-        // is that line a markdown comment
-        let matchPattern = possibleSheetName.match(/<!--(.+?)-->/)
-        if(matchPattern != null)
-        {
-            table.sheet = matchPattern[1].trim();
-        }
-    }
-
     return table;
 }
 
 // splits the given document into smaller text groups that can be markdown tables
 // returns an array of candidate table content and line numbers
 function SplitValidMarkdownTables(allLines:string[], includeTableHeaderInCellNumaration:boolean) {
-    
+
     let candidateLines: number[] = [];
 
     // check all the lines and test for table pattern
@@ -248,4 +275,62 @@ function SplitValidMarkdownTables(allLines:string[], includeTableHeaderInCellNum
 
     // return the valid table
     return tables;
+}
+
+// Add new function to parse style comments
+function parseTableStyles(commentLine: string): TableStyleConfig | undefined {
+    try {
+        // Match <!-- styles: {...} -->
+        const styleMatch = commentLine.match(/<!--\s*styles:\s*(\{[\s\S]*?\})\s*-->/);
+        if (!styleMatch) return undefined;
+
+        const stylesObj = JSON.parse(styleMatch[1]);
+        return {
+            styles: Array.isArray(stylesObj) ? stylesObj : []
+        };
+    } catch (e) {
+        console.error('Error parsing table styles:', e);
+        return undefined;
+    }
+}
+
+// Add function to apply styles to a cell
+function applyCellStyles(content: string, table: TableContent, rowIndex: number, colIndex: number): string {
+    if (!table.styles?.styles.length) {
+        return content;
+    }
+
+    const applicableStyles = table.styles.styles.filter(style => {
+        const selector = style.selector;
+        return (
+            selector === 'table' ||
+            (selector === 'header' && rowIndex === 0) ||
+            selector === `row-${rowIndex}` ||
+            selector === `col-${colIndex}` ||
+            selector === `cell-${rowIndex}-${colIndex}`
+        );
+    });
+
+    if (applicableStyles.length === 0) {
+        return content;
+    }
+
+    // Merge all applicable styles
+    const mergedStyle = applicableStyles.reduce((acc, curr) => ({
+        backgroundColor: curr.style.backgroundColor || acc.backgroundColor,
+        textColor: curr.style.textColor || acc.textColor
+    }), {} as TableStyle);
+
+    const styles = [];
+    if (mergedStyle.backgroundColor) {
+        styles.push(`background-color: ${mergedStyle.backgroundColor}`);
+    }
+    if (mergedStyle.textColor) {
+        styles.push(`color: ${mergedStyle.textColor}`);
+    }
+
+    if (styles.length > 0) {
+        return `<span style="${styles.join('; ')}">${content}</span>`;
+    }
+    return content;
 }

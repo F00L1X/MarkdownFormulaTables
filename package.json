@@ -47,6 +47,36 @@
                     "type": "boolean",
                     "default": true,
                     "description": "Calculate and update formulas on save (reload required to take effect)"
+                },
+                "markdown-formula.decimalSeparator": {
+                    "type": "string",
+                    "default": ".",
+                    "enum": [".", ","],
+                    "description": "Character to use as decimal separator in numbers"
+                },
+                "markdown-formula.thousandSeparator": {
+                    "type": "string",
+                    "default": ",",
+                    "enum": [",", ".", " ", ""],
+                    "description": "Character to use as thousand separator in numbers"
+                },
+                "markdown-formula.tableStyles": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Custom styles for tables",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "backgroundColor": {
+                                "type": "string",
+                                "description": "Background color in CSS format (e.g., '#ff0000' or 'red')"
+                            },
+                            "textColor": {
+                                "type": "string",
+                                "description": "Text color in CSS format (e.g., '#000000' or 'black')"
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -60,19 +90,20 @@
         "test": "node ./out/test/runTest.js"
     },
     "devDependencies": {
-        "@types/vscode": "^1.60.0",
+        "@types/vscode": "^1.100.0",
         "@types/glob": "^7.1.3",
-        "@types/mocha": "^8.2.2",
-        "@types/node": "14.x",
-        "eslint": "^7.27.0",
-        "@typescript-eslint/eslint-plugin": "^4.26.0",
-        "@typescript-eslint/parser": "^4.26.0",
+        "@types/mocha": "^10.0.6",
+        "@types/node": "^16.18.89",
+        "eslint": "^8.57.0",
+        "@typescript-eslint/eslint-plugin": "^7.2.0",
+        "@typescript-eslint/parser": "^7.2.0",
         "glob": "^7.1.7",
-        "mocha": "^8.4.0",
-        "typescript": "^4.3.2",
-        "vscode-test": "^1.5.2"
+        "minimatch": "^3.1.2",
+        "mocha": "^10.3.0",
+        "typescript": "^5.3.3",
+        "@vscode/test-electron": "^2.3.9"
     },
     "dependencies": {
-        "hyperformula": "^1.2.0"
+        "hyperformula": "^3.0.0"
     }
 }
